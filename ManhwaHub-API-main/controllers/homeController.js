@@ -4,50 +4,23 @@ const Category = require('../models/category');
 const Author = require('../models/author');
 const Translator = require('../models/translator');
 const Vote = require('../models/vote');
+const Follow = require('../models/follow');
 const { Sequelize } = require('sequelize');
 const NodeCache = require('node-cache');
-const cache = new NodeCache({ stdTTL: 1 }); // Cache sống trong 600 giây (10 phút)
+const cache = new NodeCache({ stdTTL: 600 }); // Cache sống trong 600 giây (10 phút)
 
 exports.getAllComics = async (req, res) => {
     try {
-        let { page = 1, limit = 18 } = req.query;
-        page = parseInt(page, 10);
-        limit = parseInt(limit, 10);
+        const cacheKey = 'comics_recent'; // Define cacheKey
 
-        // Đếm tổng số truyện
-        const totalComics = await Comic.count({ where: { is_public: 1 } });
-        const totalPages = Math.ceil(totalComics / limit);
-
-        // Nếu page vượt quá số trang có sẵn, trả về rỗng
-        if (page > totalPages) {
-            return res.status(200).json({
-                status: 'success',
-                data: [],
-                pagination: {
-                    page,
-                    limit,
-                    totalComics,
-                    totalPages,
-                },
-            });
-        }
-
-        // Kiểm tra cache
-
-
-        // Tính offset để phân trang
-        const offset = (page - 1) * limit;
-
-        // Truy vấn danh sách truyện
         const comics = await Comic.findAll({
             where: { is_public: 1 },
             order: [['updated_at', 'DESC']],
-            limit,
-            offset,
+            limit: 18,
             attributes: ['id', 'name', 'slug', 'thumbnail', 'status', 'updated_at', 'user_id','view_total'],
             include: [{
                 model: Chapter,
-                attributes: ['id', 'name', 'chapter_number', 'slug','updated_at'],
+                attributes: ['id', 'name', 'chapter_number', 'slug','updated_at','price'],
                 order: [['chapter_number', 'DESC']],
                 limit: 3,
             }],
@@ -56,6 +29,7 @@ exports.getAllComics = async (req, res) => {
         const plainComics = comics.map(comic => comic.toJSON());
 
         // Lưu vào cache
+        cache.set(cacheKey, plainComics);
 
         // Truy vấn danh sách truyện phổ biến
         const popularComics = await Comic.findAll({
@@ -71,21 +45,12 @@ res.status(200).json({
     status: 'success',
     comicsRecent: plainComics,
     comicsPopular: plainPopularComics,
-            status: 'success',
-            data: plainComics,
-            pagination: {
-                page,
-                limit,
-                totalComics,
-                totalPages,
-            },
-        });
+                   });
     } catch (error) {
         console.error('Error retrieving comics:', error);
         res.status(500).json({ status: 'error', message: 'Error retrieving comics', error });
     }
 };
-
 exports.getAllComics2 = async (req, res) => {
     try {
         let { page = 1, limit = 18 } = req.query;
@@ -167,11 +132,13 @@ exports.getDetailComic = async (req, res) => {
     try {
         const comic = await Comic.findOne({
             where: { slug },
-            attributes: ['id', 'name', 'slug', 'thumbnail', 'status', 'content'],
+            attributes: [
+                'id', 'name', 'slug', 'thumbnail', 'status', 'content', 'view_total', 'updated_at'
+            ],
             include: [
                 {
                     model: Chapter,
-                    attributes: ['id', 'name', 'chapter_number', 'slug'],
+                    attributes: ['id', 'name', 'chapter_number', 'slug', 'price', 'updated_at'],
                     order: [['chapter_number', 'DESC']],
                 },
                 {
@@ -189,10 +156,6 @@ exports.getDetailComic = async (req, res) => {
                     attributes: ['id', 'name', 'slug'],
                     through: { attributes: [] },
                 },
-                {
-                    model: Vote,
-                    attributes: [],
-                },
             ],
         });
 
@@ -200,7 +163,7 @@ exports.getDetailComic = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Comic not found' });
         }
 
-        // Tính votes_avg_value, mặc định là 5 nếu không có vote
+        // Tính giá trị trung bình của vote
         const votesAvg = await Vote.findOne({
             where: { comic_id: comic.id },
             attributes: [[Sequelize.fn('AVG', Sequelize.col('value')), 'votes_avg_value']],
@@ -209,6 +172,10 @@ exports.getDetailComic = async (req, res) => {
             Math.round(parseFloat(votesAvg.get('votes_avg_value')) * 10) / 10 : 5;
 
         comic.setDataValue('votes_avg_value', votesAvgValue);
+
+        // Đếm tổng số lượt follow
+        const followCount = await Follow.count({ where: { comic_id: comic.id } });
+        comic.setDataValue('follow_total', followCount);
 
         res.status(200).json({
             status: 'success',
@@ -219,6 +186,7 @@ exports.getDetailComic = async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Error retrieving comic', error });
     }
 };
+
 
 exports.getComicsByList = async (req, res) => {
     try {
@@ -240,20 +208,20 @@ exports.getComicsByList = async (req, res) => {
             where: { is_public: 1 },
             limit,
             offset,
-            attributes: ['id', 'name', 'slug', 'thumbnail', 'status',  'view_total'],
+            attributes: ['id', 'name', 'slug', 'thumbnail', 'status',  'view_total','updated_at','created_at'],
         };
 
         let title;
         switch (slug) {
-            case 'comic-updated':
+            case 'truyen-moi-cap-nhat':
                 queryOptions.order = [['updated_at', 'DESC']];
                 title = 'Latest Comics';
                 break;
-            case 'comic-added':
+            case 'truyen-moi':
                 queryOptions.order = [['created_at', 'DESC']];
                 title = 'New Comics';
                 break;
-            case 'comic-hot':
+            case 'truyen-hot':
                 queryOptions.order = [['view_total', 'DESC']];
                 title = 'Comic Hot';
                 break;
@@ -310,12 +278,12 @@ exports.getComicsByList = async (req, res) => {
         for (let comic of comics) {
             const chapters = await Chapter.findAll({
                 where: { comic_id: comic.id },
-                attributes: ['id', 'name', 'chapter_number', 'slug'],
+                attributes: ['id', 'name', 'chapter_number', 'slug','updated_at','price'],
                 order: [['chapter_number', 'DESC']],
                 limit: 3,
             });
             const plainComic = comic.toJSON(); // Chuyển comic thành plain JSON
-            plainComic.chapters = chapters.map(ch => ch.toJSON()); // Chuyển chapters thành plain JSON
+            plainComic.Chapters = chapters.map(ch => ch.toJSON()); // Chuyển chapters thành plain JSON
             plainComics.push(plainComic);
         }
 
@@ -384,12 +352,12 @@ exports.getComicsByCategory = async (req, res) => {
         for (let comic of comics) {
             const chapters = await Chapter.findAll({
                 where: { comic_id: comic.id },
-                attributes: ['id', 'name', 'chapter_number', 'slug'],
+                attributes: ['id', 'name', 'chapter_number', 'slug','updated_at','price'],
                 order: [['chapter_number', 'DESC']],
                 limit: 3,
             });
             const plainComic = comic.toJSON();
-            plainComic.chapters = chapters.map(ch => ch.toJSON());
+            plainComic.Chapters = chapters.map(ch => ch.toJSON());
             plainComics.push(plainComic);
         }
 
@@ -455,12 +423,12 @@ exports.getComicsByAuthor = async (req, res) => {
         for (let comic of comics) {
             const chapters = await Chapter.findAll({
                 where: { comic_id: comic.id },
-                attributes: ['id', 'name', 'chapter_number', 'slug'],
+                attributes: ['id', 'name', 'chapter_number', 'slug','updated_at','price'],
                 order: [['chapter_number', 'DESC']],
                 limit: 3,
             });
             const plainComic = comic.toJSON();
-            plainComic.chapters = chapters.map(ch => ch.toJSON());
+            plainComic.Chapters = chapters.map(ch => ch.toJSON());
             plainComics.push(plainComic);
         }
 
@@ -492,7 +460,7 @@ exports.getComicsByAuthor = async (req, res) => {
 exports.search = async (req, res) => {
     try {
         const { keyword, page = 1 } = req.query;
-        const limit = 30;
+        const limit = 5;
         const offset = (parseInt(page) - 1) * limit;
 
         // Kiểm tra keyword
@@ -515,7 +483,8 @@ exports.search = async (req, res) => {
                     { slug: { [Sequelize.Op.like]: `%${slugKeyword}%` } },
                 ],
             },
-            attributes: ['id', 'name', 'slug', 'thumbnail', 'status', 'origin_name'],
+            attributes: ['id', 'name', 'slug', 'thumbnail', 'status', 'origin_name','updated_at'],  
+            order: [['updated_at', 'DESC']],
             limit,
             offset,
         });
@@ -523,13 +492,14 @@ exports.search = async (req, res) => {
         // Thêm lastChapter cho mỗi comic và chuyển thành plain JSON
         const plainComics = [];
         for (let comic of comics) {
-            const lastChapter = await Chapter.findOne({
+            const lastChapter = await Chapter.findAll({
                 where: { comic_id: comic.id },
-                attributes: ['id', 'name', 'chapter_number', 'slug'],
+                attributes: ['id', 'name', 'chapter_number', 'slug', 'updated_at', 'price'],
                 order: [['chapter_number', 'DESC']],
+                limit: 3,
             });
             const plainComic = comic.toJSON();
-            plainComic.lastChapter = lastChapter ? lastChapter.toJSON() : null;
+            plainComic.Chapters = lastChapter.length > 0 ? lastChapter.map(ch => ch.toJSON()) : null;
             plainComics.push(plainComic);
         }
 

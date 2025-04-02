@@ -28,10 +28,9 @@ const authenticate = require('../middleware/auth');
  *       '500':
  *         description: Lỗi máy chủ nội bộ
  */
-// Route to get all comics
-
 router.get('/user',authenticate, comicController.getAllComics2);
 
+// Route to get all comics
 router.get('/', comicController.getAllComics);
 /**
  * @swagger
@@ -209,5 +208,7 @@ router.get('/category/:slug', comicController.getComicsByCategory);
  *         description: Lỗi máy chủ nội bộ
  */
 router.get('/author/:slug', comicController.getComicsByAuthor); 
+
+
 
 module.exports = router;

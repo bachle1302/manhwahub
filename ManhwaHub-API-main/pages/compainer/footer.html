@@ -1,0 +1,101 @@
+<style>
+    .footer {
+    background-color: #121212;
+    color: white;
+    padding-top: 20px;
+    padding-bottom: 20px;
+}
+
+.footer h5 {
+    color: #f8f9fa;
+    margin-bottom: 15px;
+}
+
+.footer p {
+    font-size: 14px;
+    color: #b5b5b5;
+}
+
+.badge {
+    font-size: 13px;
+    cursor: pointer;
+}
+
+#scrollTopBtn {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 40px;
+    height: 40px;
+    border: none;
+    font-size: 18px;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    transition: 0.3s;
+}
+
+#scrollTopBtn:hover {
+    background: white;
+    color: black;
+}
+
+</style>
+<footer class="footer bg-dark text-white py-4">
+    <div class="container">
+        <div class="row">
+            <!-- Cột Giới thiệu -->
+            <div class="col-md-4">
+                <h5>Giới thiệu TruyenQQ</h5>
+                <p><strong>TruyenQQ</strong> - Website đọc truyện tranh online miễn phí, không quảng cáo, cập nhật liên tục những bộ truyện mới và hay nhất. Độc giả có thể thưởng thức đa dạng thể loại từ manhwa, manhua, manga cho đến ngôn tình, tiên hiệp và kiếm hiệp...</p>
+            </div>
+
+            <!-- Cột Từ khóa -->
+            <div class="col-md-4">
+                <h5>Từ khóa</h5>
+                <div class="d-flex flex-wrap">
+                    <span class="badge bg-secondary m-1">truyenqq</span>
+                    <span class="badge bg-secondary m-1">truyenqq pro</span>
+                    <span class="badge bg-secondary m-1">truyen qq com</span>
+                    <span class="badge bg-secondary m-1">truyenqq vn</span>
+                    <span class="badge bg-secondary m-1">truyenqqq com</span>
+                    <span class="badge bg-secondary m-1">truyện qq</span>
+                    <span class="badge bg-secondary m-1">truyện tranh</span>
+                    <span class="badge bg-secondary m-1">truyện tranh đam mỹ</span>
+                    <span class="badge bg-secondary m-1">đọc truyện tranh</span>
+                    <span class="badge bg-secondary m-1">Truyện tranh miễn phí</span>
+                    <span class="badge bg-secondary m-1">Website đọc truyện tranh</span>
+                    <span class="badge bg-secondary m-1">truyện tranh hay nhất</span>
+                </div>
+            </div>
+
+            <!-- Cột Thông tin Web -->
+            <div class="col-md-4">
+                <h5>Thông tin Web</h5>
+                <p>TruyenQQ không lưu trữ bất kì tập tin nào trên máy chủ, chúng tôi chỉ liên kết tới những phương tiện truyền thông được lưu trữ bên dịch vụ thứ 3.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Nút cuộn lên trên -->
+    <button id="scrollTopBtn" class="btn btn-outline-light rounded-circle">
+        ▲
+    </button>
+</footer>
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+    const scrollTopBtn = document.getElementById("scrollTopBtn");
+
+    window.addEventListener("scroll", function () {
+        if (window.scrollY > 300) {
+            scrollTopBtn.style.display = "block";
+        } else {
+            scrollTopBtn.style.display = "none";
+        }
+    });
+
+    scrollTopBtn.addEventListener("click", function () {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+});
+
+</script>

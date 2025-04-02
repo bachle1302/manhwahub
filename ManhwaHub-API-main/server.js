@@ -5,8 +5,12 @@ require('dotenv').config();
 
 const app = express();
 const cors = require('cors');
+app.use(cors({
+  origin: 'http://localhost:3000', // URL của frontend
+  credentials: true
+}));
+app.use(express.static('public'));
 app.use(express.json());
-app.use(cors());
 app.use(cookieParser()); 
 
 // Kết nối database
@@ -26,9 +30,6 @@ app.use('/api/home', require('./routes/homeRoutes'));
 app.use('/api/genres', require('./routes/genreRoutes'));
 app.use('/api/notifications', require('./routes/notiRoutes'));
 app.use('/api/transactions', require('./routes/transactionRoutes'));
-app.use('/api/uploads', require('./routes/uploadRoutes'));
-app.use("/uploads", express.static("uploads"));
-app.use("/api/uploads", require("./routes/uploadRoutes"));
 
 app.get('/', (req, res) => {
   res.send('Welcome to the API');

@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/userController');
 const authenticate = require('../middleware/auth');
+const { uploadAvatar } = require('../middleware/upload');
+
 
 /**
  * @swagger
@@ -36,6 +38,7 @@ const authenticate = require('../middleware/auth');
  *         description: Lỗi máy chủ nội bộ
  */
 router.get('/:id', userController.getInfo);
+
 /**
  * @swagger
  * /api/users/{id}:
@@ -84,7 +87,7 @@ router.get('/:id', userController.getInfo);
  *       '500':
  *         description: Lỗi máy chủ nội bộ
  */
-router.put('/:id', authenticate, userController.updateUser);
+router.put('/:id', authenticate,uploadAvatar, userController.updateUser);
 /**
  * @swagger
  * /api/users/{id}:
@@ -158,7 +161,9 @@ router.delete('/:id',authenticate,userController.deleteUser);
  *         description: Lỗi máy chủ nội bộ
  */
 router.get('/:id/followed-comics',authenticate, userController.getFollowByUser);
+
 /**
+ * 
  * @swagger
  * /api/users/{id}/history:
  *   get:
@@ -201,6 +206,9 @@ router.get('/:id/followed-comics',authenticate, userController.getFollowByUser);
  *         description: Lỗi máy chủ nội bộ
  */
 router.get('/:id/history',authenticate, userController.getHistoryByUser);
+
+router.get('/:id/comment',authenticate, userController.getCommentByUser);
+
 /**
  * @swagger
  * /api/users/{id}/history:
@@ -249,7 +257,7 @@ router.get('/:id/history',authenticate, userController.getHistoryByUser);
  *       '500':
  *         description: Lỗi máy chủ nội bộ
  */
-router.post('/:id/history',authenticate, userController.saveHistory);
+router.post('/history',authenticate, userController.saveHistory);
 
 router.post('/buyChapter', authenticate,userController.buyChapter);
 
@@ -258,6 +266,7 @@ router.post('/depositRequest',authenticate, userController.depositRequest);
 router.post('/withdrawRequest',authenticate, userController.withdrawRequest);
 
 router.post('/upExp',authenticate, userController.upExp);
+router.get('/checkAction/:id',authenticate, userController.checkAction);
 router.get("/", authenticate, userController.getAllUsers);
 
 module.exports = router;

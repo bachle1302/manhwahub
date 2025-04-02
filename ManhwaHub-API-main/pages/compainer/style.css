@@ -1,0 +1,26 @@
+body {
+    background-color: #121212; /* Màu nền đen */
+}
+
+header {
+    border-bottom: 2px solid #333;
+}
+
+.search-box input {
+    width: 250px;
+    background-color: #333;
+    color: white;
+    border: 1px solid #555;
+}
+
+.search-box input::placeholder {
+    color: #aaa;
+}
+
+.nav-link {
+    color: #ddd !important;
+}
+
+.nav-link:hover {
+    color: white !important;
+}

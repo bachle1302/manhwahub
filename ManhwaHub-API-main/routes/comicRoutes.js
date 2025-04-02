@@ -38,7 +38,8 @@ const authenticate = require('../middleware/auth');
  *       '500':
  *         description: Lỗi máy chủ nội bộ
  */
-router.get('/:id/comments',commentController.getCommentsByComic);
+router.get('/:id/comments', commentController.getCommentsByComic);
+router.get('/:id/rating', comicController.getRatingByComic);
 /**
  * @swagger
  * /api/comics:
@@ -282,6 +283,7 @@ router.delete('/:id/unfollow', comicController.unfollowComic);
  *       '500':
  *         description: Lỗi máy chủ nội bộ
  */
-router.put('/:id/rate', comicController.rateComic);
+router.put('/:id/rating', comicController.rateComic);
 
+router.put('/:id/upView', comicController.upViewComic);
 module.exports = router;

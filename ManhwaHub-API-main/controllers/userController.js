@@ -3,6 +3,7 @@ const Comic = require('../models/comic');
 const Follow = require('../models/follow');
 const Chapter = require('../models/chapter');
 const History = require('../models/histories');
+const Comment = require('../models/comments');
 const bcrypt = require('bcryptjs');
 const  Transaction  = require('../models/transaction');
 const Purchase = require('../models/purchase');
@@ -11,8 +12,8 @@ const getInfo = async (req, res) => {
     try {
         const user = await User.findByPk(req.params.id, {
             attributes: [
-                'id', 'name', 'email',  'exp', 'avatar', "total_point"
-                // 'total_point'
+                'id', 'name', 'email',  'exp', 'avatar', 
+                'total_point'
                ]
         });
   
@@ -42,41 +43,68 @@ const getInfo = async (req, res) => {
 
 const updateUser = async (req, res) => {
   try {
-    const { id } = req.params;
-    const { name, email, password, avatar } = req.body;
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'Unauthorized - Please login first' });
+    }
 
-    // Kiểm tra quyền truy cập
+    const { id } = req.params;
+    let { name, email, password, role_id } = req.body;
     if (req.user.id !== parseInt(id) && req.user.role_id !== 2) {
       return res.status(403).json({ message: "Access denied" });
     }
-
-    // Tạo đối tượng dữ liệu cần cập nhật
     const updatedData = {};
     if (name) updatedData.name = name;
-    if (email) updatedData.email = email;
-    if (password) updatedData.password = bcrypt.hashSync(password, 10);
-    if (avatar) updatedData.avatar = avatar;
+    if (email) {
+      const existingUser = await User.findOne({ where: { email } });
+      if (existingUser && existingUser.id !== parseInt(id)) {
+        return res.status(400).json({ message: "Email already exists" });
+      }
+      updatedData.email = email;
+    }
+    if (password) {
+      updatedData.password = await bcrypt.hash(password, 10);
+    }
 
-    // Cập nhật user bằng Sequelize `update()`
+    if (role_id !== undefined) {
+      if (req.user.role_id === 2) {
+        updatedData.role_id = role_id;
+      } else {
+        return res.status(403).json({ message: "You do not have permission to update role_id" });
+      }
+    }
+    if (req.file) {
+      updatedData.avatar = `/uploads/avatars/${req.file.filename}`;
+    }
+    if (Object.keys(updatedData).length === 0) {
+      return res.status(400).json({ message: "No valid fields to update" });
+    }
     const [updated] = await User.update(updatedData, { where: { id } });
 
     if (!updated) {
       return res.status(404).json({ message: "User not found" });
     }
+    const updatedUser = await User.findByPk(id, {
+      attributes: ['id', 'name', 'email', 'avatar', 'role_id']
+    });
 
-    res.json({ message: "User updated successfully" });
+    res.json({
+      message: "User updated successfully",
+      user: updatedUser
+    });
+
   } catch (error) {
     console.error("Update User Error:", error);
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({ message: "Invalid token" });
-    }
     res.status(500).json({ message: "Internal server error" });
   }
 };
 
+
+
 const deleteUser = async (req, res) => {
     try {
-      
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Unauthorized - Please login first' });
+      }
       if (req.user.role_id !== 2) {
         return res.status(403).json({ message: "Only admin can delete users" });
       }
@@ -101,6 +129,9 @@ const deleteUser = async (req, res) => {
   
 const getFollowByUser = async (req, res) => {
   try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Unauthorized - Please login first' });
+      }
       const userId = req.user.id; // Lấy ID user từ token
       const page = parseInt(req.query.page) || 1;
       const limit = parseInt(req.query.limit) || 15;
@@ -112,10 +143,11 @@ const getFollowByUser = async (req, res) => {
           where: { user_id: userId },
           include: [{
               model: Comic,
-              attributes: ['id', 'name', 'thumbnail'],
+              attributes: ['id', 'name', 'thumbnail', 'slug', 'updated_at'],
+              order: [['updated_at', 'DESC']],
               include: [{
                   model: Chapter,
-                  attributes: ['id', 'chapter_number'],
+                  attributes: ['id', 'chapter_number','updated_at'],
                   order: [['chapter_number', 'DESC']],
                   limit: 1,
                   separate: true // Đảm bảo lấy đúng 1 chapter mới nhất
@@ -149,6 +181,9 @@ const getFollowByUser = async (req, res) => {
 
 const getHistoryByUser = async (req, res) => {
   try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'Unauthorized - Please login first' });
+    }
     const userId = req.user.id;
 
     const history = await History.findAll({
@@ -160,27 +195,98 @@ const getHistoryByUser = async (req, res) => {
       order: [['updated_at', 'DESC']],
     });
 
-    res.status(200).json({ success: true, data: { readingHistory: history } });
+const total = await History.count({ where: { user_id: userId } });
+const page = parseInt(req.query.page) || 1;
+const limit = parseInt(req.query.limit) || 10;
+const totalPages = Math.ceil(total / limit);
+
+res.status(200).json({ 
+  success: true, 
+  data: { 
+    readingHistory: history,
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages
+    }
+  } 
+});
   } catch (error) {
     console.error('Get Reading History Error:', error);
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };
 
+
+const getCommentByUser = async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'Unauthorized - Please login first' });
+    }
+
+    const userId = req.user.id;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+
+    // Lấy comment có phân trang
+    const comments = await Comment.findAll({
+      where: { user_id: userId },
+      attributes: ['id', 'user_id', 'comic_id', 'chapter_id', 'content', 'parent_id', 'created_at', 'updated_at'],
+      include: [{
+        model: Comic,
+        attributes: ['name', 'thumbnail', 'slug']
+      }],
+      order: [['updated_at', 'DESC']],
+      limit,
+      offset
+    });
+
+    // Tổng số comment
+    const total = await Comment.count({ where: { user_id: userId } });
+    const totalPages = Math.ceil(total / limit);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        comments,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get Comment History Error:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
 const saveHistory = async (req, res) => {
   try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'Unauthorized - Please login first' });
+    }
+
     const { comicId, chapterId } = req.body;
     const userId = req.user.id;
+
     if (!userId || !comicId || !chapterId) {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
+    // Kiểm tra xem đã có bản ghi chưa
     let existingHistory = await History.findOne({
       where: { user_id: userId, comic_id: comicId }
     });
+
+    let listChapter = [];
+
     if (existingHistory) {
       // Chuyển list_chapter từ TEXT -> Mảng JSON
-      let listChapter = [];
       if (existingHistory.list_chapter) {
         try {
           listChapter = JSON.parse(existingHistory.list_chapter);
@@ -188,26 +294,24 @@ const saveHistory = async (req, res) => {
           console.error("Error parsing list_chapter:", error);
         }
       }
-
-      // Nếu chapter chưa có trong danh sách, thêm vào
-      if (!listChapter.includes(chapterId)) {
-        listChapter.push(chapterId);
-      }
-
-      // Cập nhật history
-      await existingHistory.update({
-        list_chapter: JSON.stringify(listChapter), // Chuyển lại thành TEXT
-        updated_at: new Date()
-      });
-    } else {
-      
-      await History.create({
-        user_id: userId,
-        comic_id: comicId,
-        chapter_id: chapterId,
-        list_chapter: JSON.stringify([chapterId]) 
-      });
     }
+
+    // Thêm chapter mới vào danh sách (nếu chưa có)
+    if (!listChapter.includes(chapterId)) {
+      listChapter.push(chapterId);
+    }
+
+    // Loại bỏ trùng lặp (nếu có) và chuyển thành JSON string
+    listChapter = [...new Set(listChapter)];
+
+    // Sử dụng upsert để đảm bảo không có dòng nào trùng `comic_id` và `user_id`
+    await History.upsert({
+      user_id: userId,
+      comic_id: comicId,
+      chapter_id: chapterId,
+      list_chapter: JSON.stringify(listChapter), // Chuyển lại thành TEXT
+      updated_at: new Date()
+    });
 
     res.status(200).json({ message: "success" });
   } catch (error) {
@@ -216,8 +320,12 @@ const saveHistory = async (req, res) => {
   }
 };
 
+
 const buyChapter = async (req, res) => {
-  const { chapter_id} = req.body;
+  if (!req.user) {
+    return res.status(401).json({ success: false, message: 'Unauthorized - Please login first' });
+  }
+  const { chapter_id } = req.body;
   const buyer_id = req.user.id;
 
   try {
@@ -226,13 +334,13 @@ const buyChapter = async (req, res) => {
     });
 
     if (existingPurchase) {
-      return res.status(400).json({ error: 'You have already purchased this chapter.' });
+      return res.status(400).json({ message: 'You have already purchased this chapter.' });
     }
     const chapter = await Chapter.findByPk(chapter_id, {
       attributes: ['id', 'name', 'price', 'user_id']
     });
     if (!chapter) {
-      return res.status(404).json({ error: 'Chapter not found' });
+      return res.status(404).json({ message: 'Chapter not found' });
     }
 
     // Lấy thông tin người mua và tác giả
@@ -244,12 +352,12 @@ const buyChapter = async (req, res) => {
     });
     
     if (!buyer || !author) {
-      return res.status(404).json({ error: 'User not found' });
+      return res.status(404).json({ message: 'User not found' });
     }
 
     // Kiểm tra số dư người mua
     if (buyer.total_point < chapter.price) {
-      return res.status(400).json({ error: 'Insufficient balance' });
+      return res.status(400).json({ message: 'Insufficient balance' });
     }
 
     // Trừ tiền người mua
@@ -266,8 +374,18 @@ const buyChapter = async (req, res) => {
       type: 'purchase',
       amount: chapter.price,
       status: 'completed',
-      description: `Purchased chapter ${chapter_id}`
+      description: `Bạn mua chapter id:  ${chapter_id}`
     });
+
+    await Transaction.create({
+      user_id: author.id,
+      type: 'deposit',
+      amount: chapter.price,
+      status: 'completed',
+      description: `Có người mua chapter id: ${chapter_id}`
+    });
+
+
 
     await Purchase.create({
       user_id: buyer_id,
@@ -276,7 +394,7 @@ const buyChapter = async (req, res) => {
     });
     
 
-    return res.status(200).json({ message: 'Chapter purchased successfully' });
+    return res.status(200).json({ message: 'Mua chap thành công',status:'success' });
 
   } catch (error) {
     return res.status(500).json({ error: error.message });
@@ -285,6 +403,9 @@ const buyChapter = async (req, res) => {
 
 const depositRequest = async (req, res) => {
   try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'Unauthorized - Please login first' });
+    }
     const { amount } = req.body;
     const user_id=req.user.id
 
@@ -314,8 +435,11 @@ const depositRequest = async (req, res) => {
 
 const withdrawRequest = async (req, res) => {
   try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'Unauthorized - Please login first' });
+    }
     const { amount } = req.body;
-    const user_id = req.user.id; 
+    const user_id = req.user.id;
 
     if (!amount || isNaN(amount) || amount <= 0) {
       return res.status(400).json({ error: "Số tiền phải là một số dương hợp lệ." });
@@ -342,7 +466,10 @@ const withdrawRequest = async (req, res) => {
 
 const upExp = async (req, res) => {
   try {
-    const user_id = req.user.id; 
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'Unauthorized - Please login first' });
+    }
+    const user_id = req.user.id;
 
     const user = await User.findByPk(user_id, {
       attributes: ["id", "exp"],
@@ -359,6 +486,31 @@ const upExp = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+const checkAction = async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'Unauthorized - Please login first' });
+    }
+
+    const user_id = req.user.id;
+    const comic_id = req.params.id;
+
+    // Kiểm tra nếu user đã follow comic hay chưa
+    const followRecord = await Follow.findOne({
+      where: { user_id, comic_id }
+    });
+
+    const follow = !!followRecord; // Chuyển kết quả thành true/false
+
+    return res.status(200).json({ follow });
+
+  } catch (error) {
+    console.error('Lỗi:', error);
+    return res.status(500).json({ error: error.message });
+  }
+};
+
 const getAllUsers = async (req, res) => {
   try {
     // Kiểm tra xem người dùng có phải admin không (role_id = 2)
@@ -385,6 +537,11 @@ module.exports = {
   deleteUser, 
   getFollowByUser, 
   getHistoryByUser,
+  getCommentByUser,
   saveHistory,
-  buyChapter,depositRequest,withdrawRequest,upExp
+  buyChapter,
+  depositRequest,
+  withdrawRequest,
+  upExp,
+  checkAction
 };

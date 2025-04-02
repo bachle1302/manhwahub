@@ -1,10 +1,11 @@
 const Chapter = require('../models/chapter');
 const Comic = require('../models/comic');
-const Author = require('../models/author');
+const User = require('../models/user');
 const Translator = require('../models/translator');
 const Vote = require('../models/vote');
 const Follow=require('../models/follow');
 const { Sequelize } = require('sequelize');
+const moment = require('moment');
 const NodeCache = require('node-cache');
 const cache = new NodeCache({ stdTTL: 600 });
 
@@ -224,7 +225,7 @@ exports.unfollowComic = async (req, res) => {
         if (!follow) {
             return res.status(400).json({
                 status: 'error',
-                message: 'You are not following this comic',
+                message: 'bạn chưa theo dõi truyện này',
             });
         }
 
@@ -233,7 +234,7 @@ exports.unfollowComic = async (req, res) => {
 
         res.status(200).json({
             status: 'success',
-            message: 'Comic unfollowed successfully',
+            message: 'Bỏ theo dõi truyện thành công',
         });
     } catch (error) {
         console.error('Error unfollowing comic:', error);
@@ -305,4 +306,116 @@ exports.rateComic = async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Internal server error', error });
     }
 };
+
+exports.getRatingByComic = async (req, res) => {
+    try {
+        const { id } = req.params;
+        let { page = 1, limit = 10 } = req.query;
+
+        if (isNaN(id) || isNaN(page) || isNaN(limit)) {
+            return res.status(400).json({ status: 'error', message: 'Invalid parameters' });
+        }
+
+        page = parseInt(page);
+        limit = parseInt(limit);
+        const offset = (page - 1) * limit;
+
+        // Lấy tổng số đánh giá để tính tổng số trang
+        const totalRatings = await Vote.count({
+            where: { comic_id: id }
+        });
+
+        const totalPages = Math.ceil(totalRatings / limit);
+
+        // Lấy danh sách đánh giá có phân trang
+        const ratings = await Vote.findAll({
+            where: { comic_id: id },
+            attributes: ['id', 'content', 'value', 'user_id', 'updated_at','user_id'],
+            include: [
+                {
+                    model: User,
+                    attributes: ['id', 'name', 'avatar'] 
+                }
+            ],
+            order: [['created_at', 'DESC']],
+            limit,
+            offset
+        });
+      
+        res.status(200).json({
+            status: 'success',
+            data: ratings,
+            meta: {
+                currentPage: page,
+                totalPages,
+                totalRatings
+            }
+        });
+    } catch (error) {
+        console.error('Error getting ratings:', error);
+        res.status(500).json({ status: 'error', message: 'Error getting ratings', error });
+    }
+};
+
+exports.upViewComic = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const comic = await Comic.findByPk(id);
+
+        if (!comic) {
+            return res.status(404).json({ status: 'error', message: 'Comic not found' });
+        }
+
+        // Lấy ngày hiện tại, ngày đầu tuần, ngày đầu tháng
+        const today = moment().format('YYYY-MM-DD');
+        const firstDayOfWeek = moment().startOf('isoWeek').format('YYYY-MM-DD');
+        const firstDayOfMonth = moment().startOf('month').format('YYYY-MM-DD');
+
+        // Kiểm tra lần cuối cập nhật
+        const lastViewedDate = moment(comic.upview_at).format('YYYY-MM-DD');
+
+        // Các field cần update
+        const updateFields = {};
+
+        // Tổng lượt xem +1
+        updateFields.view_total = comic.view_total + 1;
+
+        // View theo ngày
+        if (lastViewedDate !== today) {
+            updateFields.view_day = 1;
+        } else {
+            updateFields.view_day = comic.view_day + 1;
+        }
+
+        // View theo tuần
+        if (moment(comic.upview_at).isBefore(firstDayOfWeek)) {
+            updateFields.view_week = 1;
+        } else {
+            updateFields.view_week = comic.view_week + 1;
+        }
+
+        // View theo tháng
+        if (moment(comic.upview_at).isBefore(firstDayOfMonth)) {
+            updateFields.view_month = 1;
+        } else {
+            updateFields.view_month = comic.view_month + 1;
+        }
+
+        // Cập nhật thời gian xem cuối cùng
+        updateFields.upview_at = new Date();
+
+        // Cập nhật tất cả chỉ trong 1 câu SQL, không đụng updated_at
+        await Comic.update(updateFields, {
+            where: { id },
+            silent: true
+        });
+
+        return res.status(200).json({ status: 'success', message: 'View count updated' });
+
+    } catch (error) {
+        console.error('Error updating view count:', error);
+        return res.status(500).json({ status: 'error', message: 'Error updating view count', error });
+    }
+};
+
 
